@@ -1,0 +1,49 @@
+#!/bin/bash
+
+# Requirements:
+#
+#   * Vector.
+#   * A Git working tree of <https://github.com/vectordotdev/vector-demos>.
+#   * Either the 'display' program from ImageMagick or the 'gm' program
+#     from GraphicsMagick.
+
+vector="$1"
+vector_demo_dir="$2"
+# vector_demo_dir is expected to be a Git working tree of
+# <https://github.com/vectordotdev/vector-demos>.
+
+if display --version | head -1 | grep -Ewq ImageMagick; then
+  show_image() { display "$@"; }
+elif gm version | head -1 | grep -Ewq GraphicsMagick; then
+  show_image() { gm display "$@"; }
+fi
+
+if temp_dir=`mktemp --directory`; then
+  temp_config="$temp_dir"/config.json
+  trap 'rm -f "$temp_config"; rmdir "$temp_dir"' EXIT
+
+  find "$vector_demo_dir" \
+    -type f \
+    \( -name '*.json' -o -name '*.toml' -o -name '*.yaml' \) \
+    -print0 |
+  xargs -r0 grep -lw transforms |
+  while read vector_config_file; do
+    if temp_file=`mktemp --suffix .json`; then
+      rm -f "$temp_config"
+
+      if
+        ! "$vector" convert-config \
+        --output-format json "$vector_config_file" "$temp_config" &> /dev/null
+      then
+        echo "CANNOT CONVERT FILE: $vector_config_file"
+      else
+        echo "DOING FILE: $vector_config_file"
+        echo Press Control-Q to exit image viewer...
+        python3 graph_configuration.py < "$temp_config" |
+        dot -Tpng |
+        show_image -
+        echo
+      fi
+    fi
+  done
+fi
